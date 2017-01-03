@@ -7,7 +7,7 @@ reading the battery level, and manually requesting a GPS reading.
 ---------------------------------------------------------------*/
 
 // Getting the library
-#include "./AssetTracker.h"
+#include "AssetTracker.h"
 
 // Set whether you want the device to publish data to the internet by default here.
 // 1 will Particle.publish AND Serial.print, 0 will just Serial.print
@@ -19,16 +19,7 @@ int transmittingData = 1;
 long lastPublish = 0;
 
 // How many minutes between publishes? 10+ recommended for long-time continuous publishing!
-int delayMinutes = 30;
-
-// Use to keep track of when we started getting GPS lock
-long lockStart = 0;
-
-// How many minutes to give the GPS to lock before publishing (it sleeps otherwise)
-int lockMinutes = 1;
-
-// How many minutes to give the GPS to lock before turning off w/o fix
-int lockTimeoutMinutes = 10;
+int delayMinutes = 10;
 
 // Creating an AssetTracker named 't' for us to reference
 AssetTracker t = AssetTracker();
@@ -48,7 +39,10 @@ int transmitMode(String command){
 // Actively ask for a GPS reading if you're impatient. Only publishes if there's
 // a GPS fix, otherwise returns '0'
 int gpsPublish(String command){
+  Serial.println("REQUEST");
     if(t.gpsFix()){
+      Serial.println("FIX");
+      Serial.println(t.readLatLon());
         Particle.publish("G", t.readLatLon(), 60, PRIVATE);
 
         // uncomment next line if you want a manual publish to reset delay counter
@@ -83,6 +77,10 @@ void setup() {
     // Sets up all the necessary AssetTracker bits
     t.begin();
 
+    // Enable the GPS module. Defaults to off to save power.
+    // Takes 1.5s or so because of delays.
+    t.gpsOn();
+
     // Opens up a Serial port so you can listen over USB
     Serial.begin(9600);
 
@@ -92,39 +90,33 @@ void setup() {
     Particle.function("gps", gpsPublish);
 }
 
-
 // loop() runs continuously
 void loop() {
+    // You'll need to run this every loop to capture the GPS output
+    t.updateGPS();
 
-    long now = millis();
+    // if the current time - the last time we published is greater than your set delay...
+    if(millis()-lastPublish > delayMinutes*60*1000){
+        // Remember when we published
+        lastPublish = millis();
 
-    // if it's time to start publishing
-    if (now - lastPublish > delayMinutes*60*1000){
+        //String pubAccel = String::format("%d,%d,%d",t.readX(),t.readY(),t.readZ());
+        //Serial.println(pubAccel);
+        //Particle.publish("A", pubAccel, 60, PRIVATE);
 
-        // if just starting, enable GPS. Takes 1.5s or so b/c delays.
-        if (lockStart == 0) {
-          lockStart = now;
-          t.gpsOn();
-        }
+        // Dumps the full NMEA sentence to serial in case you're curious
+        Serial.println(t.preNMEA());
 
-        t.updateGPS();
-
-        // if we've waited long enough to get a lock
-        if (now - lockStart > lockMinutes*60*1000) {
-
-          // if there's a fix, publish
-          if (t.gpsFix()){
-            Particle.publish("G", t.readLatLon(), 60, PRIVATE);
-            // Serial.println(t.preNMEA());
-            // Serial.println(t.readLatLon());
-            lastPublish = now;
-            t.gpsOff();
-
-            // keep trying to get a fix for a while, then give up to save power
-          } else if (now - lockStart > lockTimeoutMinutes*60*1000) {
-            lastPublish = now;
-            t.gpsOff();
-          }
+        // GPS requires a "fix" on the satellites to give good data,
+        // so we should only publish data if there's a fix
+        if(t.gpsFix()){
+            // Only publish if we're in transmittingData mode 1;
+            if(transmittingData){
+                // Short publish names save data!
+                Particle.publish("G", t.readLatLon(), 60, PRIVATE);
+            }
+            // but always report the data over serial for local development
+            Serial.println(t.readLatLon());
         }
     }
 }
