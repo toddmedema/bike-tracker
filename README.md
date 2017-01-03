@@ -1,39 +1,28 @@
-fancy asset tracker demos!
-====
+Code built off: https://github.com/dmiddlecamp/fancy-asset-tracker
 
-Here are some fancy asset tracker apps that use the [Asset Tracker Shield from Particle](https://docs.particle.io/datasheets/kits/#electron-asset-tracker)!
+Uses the [Asset Tracker Shield from Particle](https://docs.particle.io/datasheets/kits/#electron-asset-tracker)!
 
+Motion tracking outline:
 
-How to use
+- Sets the accelerometer to wake up the electron if the device moves in the 1-2G range.
+- If it wakes up and then senses motion again from the accelerometer, it connects to the cloud and reports GPS every minute
+- Once the device stops sensing motion, it continues to report its location for the next 3 minutes, then goes to sleep for 6 hours
+- If it wakes without motion, it sends a heartbeat, then goes back to sleep
+
+Setup, building and flashing
 ===
 
-Make sure you have the [particle-cli](https://github.com/spark/particle-cli) installed... and then: Pick your demo and build it!
+Make sure you have the [particle-cli](https://github.com/spark/particle-cli) installed
 
 ```
-# build your demo!
-
-./build.sh gps-clock
-
-# then you can connect your device in USB DFU mode, and flash it with:
-
-./flash gps-clock
+./build.sh
+# Then put Electron into DFU firmware flashing mode (yellow blinking)
+./flash
 ```
 
-Enjoy!
-
-
+`/lib` contains a fork of the official Particle libraries
 
 Attributions
 ===
 
 This project is possible thanks to awesome work from Particle and Adafruit, go buy stuff from them!
-
-
-Example projects
-===
-
-* gps-clock
-  * Basic example that demonstrates using the GPS clock and raw location!
-  
-* motion-tracker
-  * Basic example that manages power using the built in accelerometer and publishes location while moving

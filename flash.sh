@@ -1,2 +1,2 @@
-particle flash --usb `basename $1`.bin
+particle flash --usb firmware.bin
 

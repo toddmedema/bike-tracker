@@ -1,11 +1,8 @@
-// This #include statement was automatically added by the Spark IDE.
 #include "Adafruit_GPS.h"
 #include "Adafruit_LIS3DH.h"
 #include "GPS_Math.h"
-
-#include <math.h>
 #include "math.h"
-#include <ctype.h>
+#include "ctype.h"
 
 #define NAME "toddbike"
 #define mySerial Serial1
@@ -64,9 +61,7 @@ void setup() {
     GPS.sendCommand(PGCMD_NOANTENNA);
     delay(250);
 
-    // TODO - for testing
-    Particle.function("batt", particleBattery);
-    Particle.function("gps", particleGPS);
+    Serial.println("setup complete");
 }
 
 void initAccel() {
@@ -78,21 +73,6 @@ void initAccel() {
     // keep the pin high for 1s, wait 1s between clicks
     //uint8_t c, uint8_t clickthresh, uint8_t timelimit, uint8_t timelatency, uint8_t timewindow
     accel.setClick(1, CLICKTHRESHHOLD);//, 0, 100, 50);
-}
-
-int particleBattery(String command){
-  Serial.println(fuel.getSoC());
-    Particle.publish("B",
-          "v:" + String::format("%.2f",fuel.getVCell()) +
-          ",c:" + String::format("%.2f",fuel.getSoC()),
-          16777215, PRIVATE
-    );
-    return 1;
-}
-
-int particleGPS(String command) {
-    publishGPS();
-    return 1;
 }
 
 /* ====== LOOPING ===== */
@@ -112,7 +92,7 @@ void loop() {
         lastMotion = now;
 
         if (Particle.connected() == false) {
-            Serial.println("CONNECTING DUE TO MOTION!");
+            Serial.println("connecting (motion)");
             Particle.connect();
         }
     }
@@ -120,11 +100,11 @@ void loop() {
     // it's been too long!  Lets say hey!
     if ((now - lastIdleCheckin) >= MAX_IDLE_CHECKIN_DELAY) {
         if (Particle.connected() == false) {
-            Serial.println("CONNECTING DUE TO IDLE!");
+            Serial.println("connecting (idle)");
             Particle.connect();
         }
 
-        Particle.publish(NAME + String("_status"), "miss you <3");
+        Particle.publish(NAME + String("_s"), "heartbeat", 16777215, PRIVATE);
         lastIdleCheckin = now;
     }
 
@@ -136,7 +116,7 @@ void loop() {
 
     // if nothing's happened for a while, go to sleep
     if ((now - lastMotion) > NO_MOTION_IDLE_SLEEP_DELAY) {
-        Particle.publish(NAME + String("_status"), "sleeping!");
+        Particle.publish(NAME + String("_s"), "sleeping", 16777215, PRIVATE);
 
         lastPublish = 0;
         lastMotion = 0;
@@ -162,7 +142,7 @@ void publishGPS() {
   // Note the minus, longitutde is backwards for western hemisphere
   String latLong = String::format("%f,-%f", convertDegMinToDecDeg(GPS.latitude), convertDegMinToDecDeg(GPS.longitude));
   Serial.println(latLong);
-  Particle.publish("G", latLong, 16777215, PRIVATE);
+  Particle.publish(NAME + String("_g"), latLong, 16777215, PRIVATE);
 
   /* example of all the things we could log
     unsigned int msSinceLastMotion = (millis() - lastMotion);

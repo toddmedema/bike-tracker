@@ -43,7 +43,8 @@ boolean Adafruit_GPS::parse(char *nmea) {
     }
     if (sum != 0) {
       // bad checksum :(
-      Particle.publish("GPS", "{ error: \"bad checksum\"}", 60, PRIVATE );
+      // Skip publishing to save data
+      // Particle.publish("GPS", "{ error: \"bad checksum\"}", 60, PRIVATE );
       return false;
     }
   }
