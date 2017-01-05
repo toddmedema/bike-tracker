@@ -6,7 +6,7 @@
 
 #define NAME "toddbike"
 #define mySerial Serial1
-#define CLICKTHRESHHOLD 20
+#define CLICKTHRESHHOLD 100
 #define LED D7
 
 Adafruit_GPS GPS(&mySerial);
@@ -19,21 +19,15 @@ int lastSecond = 0;
 bool ledState = false;
 unsigned long lastMotion = 0;
 unsigned long lastPublish = 0;
-time_t lastIdleCheckin = 0;
 
-#define PUBLISH_INTERVAL (60 * 1000)
+// publish once every 1.5 minutes, so 2 publishes per cycle
+#define PUBLISH_INTERVAL (90 * 1000)
 
-// if no motion for 3 minutes, sleep! (milliseconds)
-#define NO_MOTION_IDLE_SLEEP_DELAY (3 * 60 * 1000)
+// if no motion for 2 publish cycles, sleep!
+#define NO_MOTION_IDLE_SLEEP_DELAY (2 * PUBLISH_INTERVAL + 20 * 1000)
 
-// lets wakeup every 6 hours and check in (seconds)
-#define HOW_LONG_SHOULD_WE_SLEEP (6 * 60 * 60)
-
-// when we wakeup from deep-sleep not as a result of motion,
-// how long should we wait before we publish our location?
-// lets set this to less than our sleep time, so we always idle check in.
-// (seconds)
-#define MAX_IDLE_CHECKIN_DELAY (HOW_LONG_SHOULD_WE_SLEEP - 60)
+// wake up to check in regularly
+#define SLEEP_DURATION_SECONDS (8 * 60 * 60)
 
 /* ===== SETUP ===== */
 void setup() {
@@ -60,14 +54,12 @@ void setup() {
     // turn off antenna updates
     GPS.sendCommand(PGCMD_NOANTENNA);
     delay(250);
-
-    Serial.println("setup complete");
 }
 
 void initAccel() {
     accel.begin(LIS3DH_DEFAULT_ADDRESS);
     accel.setDataRate(LIS3DH_DATARATE_LOWPOWER_5KHZ); // 5kHz low-power sampling
-    accel.setRange(LIS3DH_RANGE_4_G); // 4 gravities range
+    accel.setRange(LIS3DH_RANGE_2_G); // 2 gravities range - pretty sensitive
 
     // listen for single-tap events at the threshold
     // keep the pin high for 1s, wait 1s between clicks
@@ -77,55 +69,45 @@ void initAccel() {
 
 /* ====== LOOPING ===== */
 void loop() {
-    unsigned long now = millis();
-    checkGPS();
+  unsigned long now = millis();
+  checkGPS();
 
-    if (lastIdleCheckin == 0) { lastIdleCheckin = now; }
-    if (lastMotion > now) { lastMotion = now; }
-    if (lastPublish > now) { lastPublish = now; }
+  // make sure time tracking is in a good state
+  if (lastMotion > now) { lastMotion = now; }
+  if (lastPublish > now) { lastPublish = now; }
 
-    // we'll be woken by motion, lets keep listening for more motion.
-    // if we get two in a row, then we'll connect to the internet and start reporting in.
-    bool hasMotion = digitalRead(WKP);
-    digitalWrite(LED, (hasMotion) ? HIGH : LOW); // flash on motion
-    if (hasMotion) {
-        lastMotion = now;
+  // if motion / woken by motion, flash LED and update timestamp
+  bool hasMotion = digitalRead(WKP);
+  digitalWrite(LED, (hasMotion) ? HIGH : LOW); // flash on motion
+  if (hasMotion) {
+    lastMotion = now;
+    Serial.println('MOTION');
+  }
 
-        if (Particle.connected() == false) {
-            Serial.println("connecting (motion)");
-            Particle.connect();
-        }
-    }
+  // while, maintain a connection (won't be awake for long)
+  if (Particle.connected() == false) {
+    Serial.println("connecting and publishing position");
+    Particle.connect();
+  }
 
-    // it's been too long!  Lets say hey!
-    if ((now - lastIdleCheckin) >= MAX_IDLE_CHECKIN_DELAY) {
-        if (Particle.connected() == false) {
-            Serial.println("connecting (idle)");
-            Particle.connect();
-        }
+  // while awake, publish regularly
+  if ((now - lastPublish) > PUBLISH_INTERVAL) {
+    lastPublish = now;
+    publishGPS();
+  }
 
-        Particle.publish(NAME + String("_s"), "heartbeat", 16777215, PRIVATE);
-        lastIdleCheckin = now;
-    }
-
-    // have we published recently?
-    if (((now - lastPublish) > PUBLISH_INTERVAL) || (lastPublish == 0)) {
-        lastPublish = now;
-        publishGPS();
-    }
-
-    // if nothing's happened for a while, go to sleep
-    if ((now - lastMotion) > NO_MOTION_IDLE_SLEEP_DELAY) {
-        Particle.publish(NAME + String("_s"), "sleeping", 16777215, PRIVATE);
-
-        lastPublish = 0;
-        lastMotion = 0;
-
-        digitalWrite(D6, HIGH); // Turn off GPS power draw
-        delay(10*1000); // settle down before sleep
-        System.sleep(SLEEP_MODE_DEEP, HOW_LONG_SHOULD_WE_SLEEP);
-    }
-    delay(10);
+  // if nothing's happened for a while, publish battery state and go to sleep
+  if ((now - lastMotion) > NO_MOTION_IDLE_SLEEP_DELAY) {
+    String batt = String::format("%.2fv,%.2f%%", fuel.getVCell(), fuel.getSoC());
+    Particle.publish(NAME + String("_b"), batt, 16777215, PRIVATE);
+    Particle.publish(NAME + String("_s"), "sleeping", 16777215, PRIVATE);
+    lastPublish = 0;
+    lastMotion = 0;
+    digitalWrite(D6, HIGH); // Turn off GPS power draw
+    delay(20*1000); // settle down before sleep
+    System.sleep(SLEEP_MODE_DEEP, SLEEP_DURATION_SECONDS);
+  }
+  delay(10);
 }
 
 // process and dump everything from the module through the library.
@@ -138,6 +120,7 @@ void checkGPS() {
   }
 }
 
+// publish location to Particle cloud as an event
 void publishGPS() {
   // Note the minus, longitutde is backwards for western hemisphere
   String latLong = String::format("%f,-%f", convertDegMinToDecDeg(GPS.latitude), convertDegMinToDecDeg(GPS.longitude));
