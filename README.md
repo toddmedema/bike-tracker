@@ -26,3 +26,6 @@ Attributions
 ===
 
 This project is possible thanks to awesome work from Particle and Adafruit, go buy stuff from them!
+
+Other similar libraries:
+https://github.com/benagricola/tracker

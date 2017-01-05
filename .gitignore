@@ -1,5 +1,6 @@
 *.bin
 temp_build/
+config.json
 
 # Logs
 logs

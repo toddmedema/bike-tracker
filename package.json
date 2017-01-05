@@ -1,0 +1,25 @@
+{
+  "name": "ebike-tracker",
+  "version": "1.0.0",
+  "description": "Code built off: https://github.com/dmiddlecamp/fancy-asset-tracker",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/toddmedema/ebike-tracker.git"
+  },
+  "author": "Todd Medema",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/toddmedema/ebike-tracker/issues"
+  },
+  "homepage": "https://github.com/toddmedema/ebike-tracker",
+  "dependencies": {
+    "nconf": "^0.8.4",
+    "particle-api-js": "^6.4.1",
+    "winston": "^2.3.0"
+  }
+}

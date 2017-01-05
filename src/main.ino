@@ -20,51 +20,48 @@ bool ledState = false;
 unsigned long lastMotion = 0;
 unsigned long lastPublish = 0;
 
-// publish once every 1.5 minutes, so 2 publishes per cycle
-#define PUBLISH_INTERVAL (90 * 1000)
+// publish once per minute
+#define PUBLISH_INTERVAL (60 * 1000)
 
-// if no motion for 2 publish cycles, sleep!
+// if no motion for two publish cycles, sleep!
 #define NO_MOTION_IDLE_SLEEP_DELAY (2 * PUBLISH_INTERVAL + 20 * 1000)
 
 // wake up to check in regularly
-#define SLEEP_DURATION_SECONDS (8 * 60 * 60)
+// TODO once motion wake working, increase to 8 hours
+#define SLEEP_DURATION_SECONDS (1 * 60 * 60)
 
 /* ===== SETUP ===== */
 void setup() {
-    initAccel();
-
-    // enable the power to the gps module & set up GPS
-    pinMode(D6, OUTPUT);
-    digitalWrite(D6, LOW);
-    GPS.begin(9600);
-    mySerial.begin(9600);
-
     pinMode(LED, OUTPUT);
     digitalWrite(LED, LOW);
     Serial.begin(9600);
+    initAccel();
+    initGPS();
+}
 
-    //# request a HOT RESTART, in case we were in standby mode before.
-    GPS.sendCommand("$PMTK101*32");
-    delay(250);
-
-    // request everything!
-    GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_ALLDATA);
-    delay(250);
-
-    // turn off antenna updates
-    GPS.sendCommand(PGCMD_NOANTENNA);
-    delay(250);
+void initGPS() {
+  pinMode(D6, OUTPUT);
+  digitalWrite(D6, LOW);
+  GPS.begin(9600);
+  mySerial.begin(9600);
+  //# request a HOT RESTART, in case we were in standby mode before.
+  GPS.sendCommand("$PMTK101*32");
+  delay(250);
+  GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_ALLDATA); // request everything!
+  delay(250);
+  GPS.sendCommand(PGCMD_NOANTENNA); // turn off antenna updates
+  delay(250);
 }
 
 void initAccel() {
-    accel.begin(LIS3DH_DEFAULT_ADDRESS);
-    accel.setDataRate(LIS3DH_DATARATE_LOWPOWER_5KHZ); // 5kHz low-power sampling
-    accel.setRange(LIS3DH_RANGE_2_G); // 2 gravities range - pretty sensitive
+  accel.begin(LIS3DH_DEFAULT_ADDRESS);
+  accel.setDataRate(LIS3DH_DATARATE_LOWPOWER_5KHZ); // 5kHz low-power sampling
+  accel.setRange(LIS3DH_RANGE_2_G); // 2 gravities range - pretty sensitive
 
-    // listen for single-tap events at the threshold
-    // keep the pin high for 1s, wait 1s between clicks
-    //uint8_t c, uint8_t clickthresh, uint8_t timelimit, uint8_t timelatency, uint8_t timewindow
-    accel.setClick(1, CLICKTHRESHHOLD);//, 0, 100, 50);
+  // listen for single-tap events at the threshold
+  // keep the pin high for 1s, wait 1s between clicks
+  //uint8_t c, uint8_t clickthresh, uint8_t timelimit, uint8_t timelatency, uint8_t timewindow
+  accel.setClick(1, CLICKTHRESHHOLD);//, 0, 100, 50);
 }
 
 /* ====== LOOPING ===== */
@@ -81,13 +78,13 @@ void loop() {
   digitalWrite(LED, (hasMotion) ? HIGH : LOW); // flash on motion
   if (hasMotion) {
     lastMotion = now;
-    Serial.println('MOTION');
   }
 
   // while, maintain a connection (won't be awake for long)
+  // Use Particle connection as a proxy for general on / off state
   if (Particle.connected() == false) {
     Serial.println("connecting and publishing position");
-    Particle.connect();
+    turnOn();
   }
 
   // while awake, publish regularly
@@ -98,16 +95,30 @@ void loop() {
 
   // if nothing's happened for a while, publish battery state and go to sleep
   if ((now - lastMotion) > NO_MOTION_IDLE_SLEEP_DELAY) {
-    String batt = String::format("%.2fv,%.2f%%", fuel.getVCell(), fuel.getSoC());
-    Particle.publish(NAME + String("_b"), batt, 16777215, PRIVATE);
-    Particle.publish(NAME + String("_s"), "sleeping", 16777215, PRIVATE);
-    lastPublish = 0;
-    lastMotion = 0;
-    digitalWrite(D6, HIGH); // Turn off GPS power draw
-    delay(20*1000); // settle down before sleep
-    System.sleep(SLEEP_MODE_DEEP, SLEEP_DURATION_SECONDS);
+    turnOff();
   }
   delay(10);
+}
+
+void turnOn() {
+  digitalWrite(D6, LOW); // GPS
+  Particle.connect(); // cloud + cell
+}
+
+void turnOff() {
+  String batt = String::format("%.2fv,%.2f%%", fuel.getVCell(), fuel.getSoC());
+  Serial.println(batt);
+  Particle.publish(NAME + String("_b"), batt, 16777215, PRIVATE);
+  /*Particle.publish(NAME + String("_s"), "sleeping", 16777215, PRIVATE);*/
+  delay(10*1000);
+  lastPublish = 0;
+  lastMotion = 0;
+  digitalWrite(D6, HIGH); // GPS
+  Particle.disconnect(); // cloud
+  Cellular.off(); // cell
+  fuel.sleep(); // battery monitoring
+  delay(10*1000); // settle down before sleep
+  System.sleep(SLEEP_MODE_DEEP, SLEEP_DURATION_SECONDS);
 }
 
 // process and dump everything from the module through the library.
