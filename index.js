@@ -23,8 +23,6 @@ function listen() {
     console.log('Started listening');
     stream.on('event', (data) => {
       Winston.log('info', data);
-      console.log('Event: ' + JSON.stringify(data));
-
     });
   }, (err) => {
     console.log('Failed to start listening: ', err);

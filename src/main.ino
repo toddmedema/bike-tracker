@@ -8,6 +8,19 @@
 #define mySerial Serial1
 #define CLICKTHRESHHOLD 100
 #define LED D7
+#define LOWBATCUTOFF 20 // % of battery below which to sleep loop until charged
+
+// publish GPS once per minute
+#define PUBLISH_INTERVAL (60 * 1000)
+
+// if no motion for two publish cycles, sleep! (publish battery state)
+#define NO_MOTION_IDLE_SLEEP_DELAY (2 * PUBLISH_INTERVAL + 20 * 1000)
+
+// wake up to check in every 8 hours even w/o motion
+#define SLEEP_DURATION_SECONDS (8 * 60 * 60)
+
+// how long it should sleep while waiting for more charge
+#define LOWBAT_SLEEP_DURATION_SECONDS (60 * 60)
 
 Adafruit_GPS GPS(&mySerial);
 Adafruit_LIS3DH accel = Adafruit_LIS3DH(A2, A5, A4, A3);
@@ -20,23 +33,15 @@ bool ledState = false;
 unsigned long lastMotion = 0;
 unsigned long lastPublish = 0;
 
-// publish once per minute
-#define PUBLISH_INTERVAL (60 * 1000)
-
-// if no motion for two publish cycles, sleep!
-#define NO_MOTION_IDLE_SLEEP_DELAY (2 * PUBLISH_INTERVAL + 20 * 1000)
-
-// wake up to check in regularly
-// TODO once motion wake working, increase to 8 hours
-#define SLEEP_DURATION_SECONDS (1 * 60 * 60)
 
 /* ===== SETUP ===== */
+
 void setup() {
-    pinMode(LED, OUTPUT);
-    digitalWrite(LED, LOW);
-    Serial.begin(9600);
-    initAccel();
-    initGPS();
+  initGPS();
+  initAccel();
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, LOW);
+  Serial.begin(9600);
 }
 
 void initGPS() {
@@ -62,32 +67,40 @@ void initAccel() {
   // keep the pin high for 1s, wait 1s between clicks
   //uint8_t c, uint8_t clickthresh, uint8_t timelimit, uint8_t timelatency, uint8_t timewindow
   accel.setClick(1, CLICKTHRESHHOLD);//, 0, 100, 50);
+  delay(250);
 }
 
-/* ====== LOOPING ===== */
-void loop() {
-  unsigned long now = millis();
-  checkGPS();
 
-  // make sure time tracking is in a good state
+/* ====== LOOPING ===== */
+
+void loop() {
+  // if not enough power to init connection, sleep (and hopefully charge)
+  if (fuel.getSoC() < LOWBATCUTOFF) {
+    turnOff(LOWBAT_SLEEP_DURATION_SECONDS);
+  }
+
+  // keeping track of time
+  unsigned long now = millis();
   if (lastMotion > now) { lastMotion = now; }
   if (lastPublish > now) { lastPublish = now; }
 
-  // if motion / woken by motion, flash LED and update timestamp
+  // if motion / woken by motion, flash LED and update motion timestamp
   bool hasMotion = digitalRead(WKP);
   digitalWrite(LED, (hasMotion) ? HIGH : LOW); // flash on motion
   if (hasMotion) {
     lastMotion = now;
   }
 
-  // while, maintain a connection (won't be awake for long)
-  // Use Particle connection as a proxy for general on / off state
+  // while awake, maintain a connection (won't be awake for long)
+  // use Particle connection as a proxy for general on / off state
   if (Particle.connected() == false) {
-    Serial.println("connecting and publishing position");
+    Serial.println("connecting");
     turnOn();
+    Serial.println("connected");
   }
 
   // while awake, publish regularly
+  checkGPS();
   if ((now - lastPublish) > PUBLISH_INTERVAL) {
     lastPublish = now;
     publishGPS();
@@ -95,30 +108,30 @@ void loop() {
 
   // if nothing's happened for a while, publish battery state and go to sleep
   if ((now - lastMotion) > NO_MOTION_IDLE_SLEEP_DELAY) {
-    turnOff();
+    turnOff(SLEEP_DURATION_SECONDS);
   }
   delay(10);
 }
 
-void turnOn() {
+void turnOn() { // draws ~180mA while on & connect to GPS + Cell
+  fuel.wakeup(); // battery monitoring
   digitalWrite(D6, LOW); // GPS
-  Particle.connect(); // cloud + cell
+  Particle.connect(); // cell + cloud
 }
 
-void turnOff() {
-  String batt = String::format("%.2fv,%.2f%%", fuel.getVCell(), fuel.getSoC());
+void turnOff(int sleepSeconds) { // draws ~130uA in sleep
+  String batt = String::format("%.2fv,%.1f%%", fuel.getVCell(), fuel.getSoC());
   Serial.println(batt);
   Particle.publish(NAME + String("_b"), batt, 16777215, PRIVATE);
-  /*Particle.publish(NAME + String("_s"), "sleeping", 16777215, PRIVATE);*/
   delay(10*1000);
   lastPublish = 0;
   lastMotion = 0;
   digitalWrite(D6, HIGH); // GPS
   Particle.disconnect(); // cloud
   Cellular.off(); // cell
-  fuel.sleep(); // battery monitoring
+  fuel.sleep(); // battery monitoring (~200uA)
   delay(10*1000); // settle down before sleep
-  System.sleep(SLEEP_MODE_DEEP, SLEEP_DURATION_SECONDS);
+  System.sleep(SLEEP_MODE_DEEP, sleepSeconds);
 }
 
 // process and dump everything from the module through the library.
