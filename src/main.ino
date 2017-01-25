@@ -8,7 +8,10 @@
 #define mySerial Serial1
 #define CLICKTHRESHHOLD 100
 #define LED D7
-#define LOWBATCUTOFF 20 // % of battery below which to sleep loop until charged
+#define LOWBATCUTOFFP 15.0 // % of battery below which to sleep loop until charged
+#define LOWBATCUTOFFV 3.70 // battery voltage below which to sleep loop until charged
+// battery must be below both % and voltage to be considered "low"
+// since battery gauge doesn't always do a good job updating %'s
 
 // publish GPS once per minute
 #define PUBLISH_INTERVAL (60 * 1000)
@@ -28,10 +31,13 @@ FuelGauge fuel;
 SYSTEM_MODE(SEMI_AUTOMATIC); // manual control of cell connection
 STARTUP(System.enableFeature(FEATURE_RETAINED_MEMORY));
 
+bool justWoke = true;
 int lastSecond = 0;
 bool ledState = false;
-unsigned long lastMotion = 0;
-unsigned long lastPublish = 0;
+unsigned long lastMotionTime = 0;
+unsigned long lastPublishTime = 0;
+float lastGpsLat = 0.0;
+float lastGpsLong = 0.0;
 
 
 /* ===== SETUP ===== */
@@ -74,21 +80,24 @@ void initAccel() {
 /* ====== LOOPING ===== */
 
 void loop() {
-  // if not enough power to init connection, sleep (and hopefully charge)
-  if (fuel.getSoC() < LOWBATCUTOFF) {
-    turnOff(LOWBAT_SLEEP_DURATION_SECONDS);
+  if (justWoke) {
+    justWoke = false;
+    // if not enough power to init connection, sleep (and hopefully charge)
+    if (fuel.getSoC() < LOWBATCUTOFFP && fuel.getVCell() < LOWBATCUTOFFV) {
+      turnOff(LOWBAT_SLEEP_DURATION_SECONDS);
+    }
   }
 
   // keeping track of time
   unsigned long now = millis();
-  if (lastMotion > now) { lastMotion = now; }
-  if (lastPublish > now) { lastPublish = now; }
+  if (lastMotionTime > now) { lastMotionTime = now; }
+  if (lastPublishTime > now) { lastPublishTime = now; }
 
   // if motion / woken by motion, flash LED and update motion timestamp
   bool hasMotion = digitalRead(WKP);
   digitalWrite(LED, (hasMotion) ? HIGH : LOW); // flash on motion
   if (hasMotion) {
-    lastMotion = now;
+    lastMotionTime = now;
   }
 
   // while awake, maintain a connection (won't be awake for long)
@@ -101,13 +110,13 @@ void loop() {
 
   // while awake, publish regularly
   checkGPS();
-  if ((now - lastPublish) > PUBLISH_INTERVAL) {
-    lastPublish = now;
+  if ((now - lastPublishTime) > PUBLISH_INTERVAL) {
+    lastPublishTime = now;
     publishGPS();
   }
 
   // if nothing's happened for a while, publish battery state and go to sleep
-  if ((now - lastMotion) > NO_MOTION_IDLE_SLEEP_DELAY) {
+  if ((now - lastMotionTime) > NO_MOTION_IDLE_SLEEP_DELAY) {
     turnOff(SLEEP_DURATION_SECONDS);
   }
   delay(10);
@@ -122,10 +131,15 @@ void turnOn() { // draws ~180mA while on & connect to GPS + Cell
 void turnOff(int sleepSeconds) { // draws ~130uA in sleep
   String batt = String::format("%.2fv,%.1f%%", fuel.getVCell(), fuel.getSoC());
   Serial.println(batt);
-  Particle.publish(NAME + String("_b"), batt, 16777215, PRIVATE);
-  delay(10*1000);
-  lastPublish = 0;
-  lastMotion = 0;
+  if (Particle.connected() == true) {
+    Particle.publish(NAME + String("_b"), batt, 16777215, PRIVATE);
+  }
+  delay(15*1000);
+  lastPublishTime = 0;
+  lastMotionTime = 0;
+  lastGpsLat = 0.0;
+  lastGpsLong = 0.0;
+  justWoke = true;
   digitalWrite(D6, HIGH); // GPS
   Particle.disconnect(); // cloud
   Cellular.off(); // cell
@@ -140,6 +154,12 @@ void checkGPS() {
     char c = GPS.read();
     if (GPS.newNMEAreceived()) {
       GPS.parse(GPS.lastNMEA());
+      float latitude = convertDegMinToDecDeg(GPS.latitude);
+      float longitude = convertDegMinToDecDeg(GPS.longitude);
+      if (round(latitude) != 0 && round(longitude) != 0) {
+        lastGpsLat = latitude;
+        lastGpsLong = longitude;
+      }
     }
   }
 }
@@ -147,13 +167,13 @@ void checkGPS() {
 // publish location to Particle cloud as an event
 void publishGPS() {
   // Note the minus, longitutde is backwards for western hemisphere
-  String latLong = String::format("%f,-%f", convertDegMinToDecDeg(GPS.latitude), convertDegMinToDecDeg(GPS.longitude));
+  String latLong = String::format("%f,-%f", lastGpsLat, lastGpsLong);
   Serial.println(latLong);
   Particle.publish(NAME + String("_g"), latLong, 16777215, PRIVATE);
 
   /* example of all the things we could log
-    unsigned int msSinceLastMotion = (millis() - lastMotion);
-    bool motionInTheLastMinute = (msSinceLastMotion < 60000);
+    unsigned int msSincelastMotionTime = (millis() - lastMotionTime);
+    bool motionInTheLastMinute = (msSincelastMotionTime < 60000);
 
     String gps_line =
           "{\"lat\":"    + String(convertDegMinToDecDeg(GPS.latitude))
