@@ -36,8 +36,10 @@ int lastSecond = 0;
 bool ledState = false;
 unsigned long lastMotionTime = 0;
 unsigned long lastPublishTime = 0;
-float lastGpsLat = 0.0;
-float lastGpsLong = 0.0;
+float latitude = 0.0;
+float longitude = 0.0;
+float lastLat = 0.0;
+float lastLong = 0.0;
 
 
 /* ===== SETUP ===== */
@@ -137,8 +139,8 @@ void turnOff(int sleepSeconds) { // draws ~130uA in sleep
   delay(15*1000);
   lastPublishTime = 0;
   lastMotionTime = 0;
-  lastGpsLat = 0.0;
-  lastGpsLong = 0.0;
+  latitude = 0.0;
+  longitude = 0.0;
   justWoke = true;
   digitalWrite(D6, HIGH); // GPS
   Particle.disconnect(); // cloud
@@ -154,11 +156,16 @@ void checkGPS() {
     char c = GPS.read();
     if (GPS.newNMEAreceived()) {
       GPS.parse(GPS.lastNMEA());
-      float latitude = convertDegMinToDecDeg(GPS.latitude);
-      float longitude = convertDegMinToDecDeg(GPS.longitude);
-      if (round(latitude) != 0 && round(longitude) != 0) {
-        lastGpsLat = latitude;
-        lastGpsLong = longitude;
+      float lat = convertDegMinToDecDeg(GPS.latitude);
+      // flip longitude to be correct
+      float lon = -1 * convertDegMinToDecDeg(GPS.longitude);
+// TODO test this...
+      Serial.println(lat);
+      Serial.println(lon);
+      if (round(lat) != 0 && round(lon) != 0) {
+        Serial.println("GPS coordinates updated");
+        latitude = lat;
+        longitude = lon;
       }
     }
   }
@@ -166,10 +173,11 @@ void checkGPS() {
 
 // publish location to Particle cloud as an event
 void publishGPS() {
-  // Note the minus, longitutde is backwards for western hemisphere
-  String latLong = String::format("%f,-%f", lastGpsLat, lastGpsLong);
+  String latLong = String::format("%f,%f", latitude, longitude);
   Serial.println(latLong);
   Particle.publish(NAME + String("_g"), latLong, 16777215, PRIVATE);
+  lastLat = latitude;
+  lastLong = longitude;
 
   /* example of all the things we could log
     unsigned int msSincelastMotionTime = (millis() - lastMotionTime);
