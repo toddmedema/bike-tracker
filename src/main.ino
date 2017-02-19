@@ -4,7 +4,7 @@
 #include "math.h"
 #include "ctype.h"
 
-#define NAME "toddbike"
+#define NAME "/sensor/toddbike/"
 #define mySerial Serial1
 #define CLICKTHRESHHOLD 100
 #define LED D7
@@ -134,7 +134,7 @@ void turnOff(int sleepSeconds) { // draws ~130uA in sleep
   String batt = String::format("%.2fv,%.1f%%", fuel.getVCell(), fuel.getSoC());
   Serial.println(batt);
   if (Particle.connected() == true) {
-    Particle.publish(NAME + String("_b"), batt, 16777215, PRIVATE);
+    Particle.publish(NAME + String("/b"), batt, 16777215, PRIVATE);
   }
   delay(15*1000);
   lastPublishTime = 0;
@@ -159,11 +159,7 @@ void checkGPS() {
       float lat = convertDegMinToDecDeg(GPS.latitude);
       // flip longitude to be correct
       float lon = -1 * convertDegMinToDecDeg(GPS.longitude);
-// TODO test this...
-      Serial.println(lat);
-      Serial.println(lon);
       if (round(lat) != 0 && round(lon) != 0) {
-        Serial.println("GPS coordinates updated");
         latitude = lat;
         longitude = lon;
       }
@@ -175,7 +171,7 @@ void checkGPS() {
 void publishGPS() {
   String latLong = String::format("%f,%f", latitude, longitude);
   Serial.println(latLong);
-  Particle.publish(NAME + String("_g"), latLong, 16777215, PRIVATE);
+  Particle.publish(NAME + String("/g"), latLong, 16777215, PRIVATE);
   lastLat = latitude;
   lastLong = longitude;
 

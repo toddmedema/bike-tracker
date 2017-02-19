@@ -8,12 +8,12 @@ This clever tracking device wakes up whenever there's motion, conserving battery
 
 ### Motion tracking outline:
 
-- Set your device name, allowing for multiple trackers on a single account (default: `toddbike`)
+- Set your device name, allowing for multiple trackers on a single account (default: `/sensor/toddbike`)
 - Accelerometer wakes up the electron if the device moves in the 1-2G range (the onboard blue LED will also flash when it detects motion)
-- Upon wake (from motion or the long-sleep checking), it connects to the cloud and reports GPS every minute (ie `toddbike_g=40.53211,-40.23455`)
+- Upon wake (from motion or the long-sleep checking), it connects to the cloud and reports GPS every minute (ie `/sensor/toddbike/g=40.53211,-40.23455`)
   - since the GPS occasionally reports an invalid location even with a good signal, it continuously checks its location while on, and reports the last valid / good location at the check-in interval
 - Once the device stops sensing motion, it continues to report its location for 2 minutes (2 more reports), then goes to sleep for 8 hours
-- Publishes the battery status (ie `toddbike_b=3.94v80.1%`) right before going to sleep, serving both as the "going to sleep" indicator, and allowing you to log battery state
+- Publishes the battery status (ie `/sensor/toddbike/b=3.94v80.1%`) right before going to sleep, serving both as the "going to sleep" indicator, and allowing you to log battery state
 - Solar Cell optimization: If it wakes at <20% battery (not enough to start a cell connection, which draws a lot of current), it immediately sleeps for an hour; it'll keep trying this until it's above 20% (even at 20% battery, it should be able to keep doing this for 5+ days)
 
 ### Parts list
