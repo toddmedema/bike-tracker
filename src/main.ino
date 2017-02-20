@@ -134,7 +134,7 @@ void turnOff(int sleepSeconds) { // draws ~130uA in sleep
   String batt = String::format("%.2fv,%.1f%%", fuel.getVCell(), fuel.getSoC());
   Serial.println(batt);
   if (Particle.connected() == true) {
-    Particle.publish(NAME + String("/b"), batt, 16777215, PRIVATE);
+    Particle.publish(NAME + String("b"), batt, 16777215, PRIVATE);
   }
   delay(15*1000);
   lastPublishTime = 0;
@@ -171,7 +171,7 @@ void checkGPS() {
 void publishGPS() {
   String latLong = String::format("%f,%f", latitude, longitude);
   Serial.println(latLong);
-  Particle.publish(NAME + String("/g"), latLong, 16777215, PRIVATE);
+  Particle.publish(NAME + String("g"), latLong, 16777215, PRIVATE);
   lastLat = latitude;
   lastLong = longitude;
 
